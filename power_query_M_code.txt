@@ -1,0 +1,254 @@
+POWER QUERY CLEANING PIPELINE — raw_claims_extract.xlsx
+=========================================================
+
+HOW TO USE THIS FILE
+---------------------
+1. Open raw_claims_extract.xlsx in Excel. It already contains:
+     - RMIS_Export      (raw data, now a proper Excel Table)
+     - Map_School       (school name -> canonical name + School Level)
+     - Map_Department   (department name -> canonical name)
+     - Map_BodyPart     (body part text -> canonical name)
+     - Map_Cause        (injury cause text -> canonical name)
+     - Map_Status       (claim status text -> canonical name)
+   These 5 mapping tables were generated to exactly cover every messy value
+   in the raw data — you can inspect/edit them like any Excel table.
+
+2. Go to Data -> Get Data -> Launch Power Query Editor (or Data -> From Table/Range
+   on RMIS_Export, then use Home -> New Source -> Blank Query for the rest).
+
+3. For each of the 4 queries below:
+     - Home -> New Query -> Blank Query
+     - Right-click the new query -> Advanced Editor
+     - Delete the placeholder text, paste in the M code for that query
+     - Click Done
+     - Rename the query (right-click -> Rename) to the name shown before "=" below
+       (e.g. name the first one exactly "Claims_Raw")
+
+4. Build them IN THIS ORDER, because each one references the previous:
+     Claims_Raw -> Claims_Prepared -> Claims_Clean -> Exceptions
+
+5. For Claims_Raw and Claims_Prepared: right-click -> "Enable Load" should be
+   turned OFF (they're staging queries, not meant to land on a sheet).
+   For Claims_Clean and Exceptions: leave "Enable Load" ON. When you click
+   Close & Load, choose "Load To... -> New Worksheet" and load them onto sheets
+   named exactly "Claims_Clean" and "Exceptions".
+
+Naming convention used in Claims_Clean: PascalCase for every column
+(ClaimId, ReportDate, SchoolSite, ...). Documented in claims_cleaning_log.xlsx.
+
+
+=========================================================
+QUERY 1: Claims_Raw   (Enable Load: OFF)
+=========================================================
+let
+    Source = Excel.CurrentWorkbook(){[Name="RMIS_Export"]}[Content],
+    ChangedTypes = Table.TransformColumnTypes(Source,{
+        {"Claim_ID", type text}, {"Report_Date", type text}, {"School_Site", type text},
+        {"Department", type text}, {"Injury_Body_Part", type text}, {"Injury_Cause", type text},
+        {"Claim_Status", type text}, {"Employee_Type", type text}
+    }),
+    TrimmedText = Table.TransformColumns(ChangedTypes, {
+        {"School_Site", each if _ = null then _ else Text.Trim(_), type text},
+        {"Department", each if _ = null then _ else Text.Trim(_), type text},
+        {"Injury_Body_Part", each if _ = null then _ else Text.Trim(_), type text},
+        {"Injury_Cause", each if _ = null then _ else Text.Trim(_), type text},
+        {"Claim_Status", each if _ = null then _ else Text.Trim(_), type text}
+    }),
+    WithRowIndex = Table.AddIndexColumn(TrimmedText, "RowIndex", 1, 1, Int64.Type),
+    AssignMissingIds = Table.AddColumn(WithRowIndex, "Claim_ID_Filled", each
+        if [Claim_ID] = null or Text.Trim([Claim_ID]) = "" then
+            "UNASSIGNED-" & Text.PadStart(Text.From([RowIndex]), 3, "0")
+        else
+            [Claim_ID]
+    ),
+    RemovedHelper = Table.RemoveColumns(AssignMissingIds, {"Claim_ID", "RowIndex"}),
+    Renamed = Table.RenameColumns(RemovedHelper, {{"Claim_ID_Filled", "Claim_ID"}}),
+    // Dedup is safe here because every missing-ID row now has a UNIQUE
+    // UNASSIGNED-### id, so real (exact) duplicate Claim_IDs are the only
+    // rows collapsed by Table.Distinct.
+    Deduped = Table.Distinct(Renamed, {"Claim_ID"})
+in
+    Deduped
+
+
+=========================================================
+QUERY 2: Claims_Prepared   (Enable Load: OFF)
+=========================================================
+let
+    Source = Claims_Raw,
+
+    // --- messy-date parser: handles M/D/YY, YYYY-MM-DD, and DD-Mon-YY ---
+    fnParseMessyDate = (raw as nullable text) as nullable date =>
+        let
+            t = if raw = null then null else Text.Trim(raw),
+            MonthNames = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"},
+            parsed =
+                try
+                    if t = null or t = "" then null
+                    else if Text.Contains(t, "/") then
+                        let
+                            p = Text.Split(t, "/"),
+                            mm = Number.FromText(p{0}),
+                            dd = Number.FromText(p{1}),
+                            yyRaw = Number.FromText(p{2}),
+                            yyyy = if yyRaw < 100 then 2000 + yyRaw else yyRaw
+                        in
+                            #date(yyyy, mm, dd)
+                    else if Text.Contains(t, "-") then
+                        let
+                            p = Text.Split(t, "-")
+                        in
+                            if Text.Length(p{0}) = 4 then
+                                #date(Number.FromText(p{0}), Number.FromText(p{1}), Number.FromText(p{2}))
+                            else
+                                let
+                                    dd = Number.FromText(p{0}),
+                                    monAbbr = Text.Proper(p{1}),
+                                    monNum = List.PositionOf(MonthNames, monAbbr) + 1,
+                                    yyRaw = Number.FromText(p{2}),
+                                    yyyy = if yyRaw < 100 then 2000 + yyRaw else yyRaw
+                                in
+                                    #date(yyyy, monNum, dd)
+                    else
+                        null
+                otherwise null
+        in
+            parsed,
+
+    // --- currency/number cleaner: handles "$4,200", plain numbers, negatives, blanks ---
+    fnCleanLossAmount = (raw as any) as nullable number =>
+        let
+            result =
+                try
+                    if raw = null then null
+                    else if Value.Is(raw, type number) then raw + 0.0
+                    else
+                        let
+                            t = Text.Trim(Text.From(raw)),
+                            cleaned = Text.Remove(t, {"$", ","}),
+                            n = Number.FromText(cleaned)
+                        in
+                            n
+                otherwise null
+        in
+            result,
+
+    AddParsedDate = Table.AddColumn(Source, "ParsedDate", each fnParseMessyDate([Report_Date]), type nullable date),
+    AddCleanLoss = Table.AddColumn(AddParsedDate, "CleanedLoss", each fnCleanLossAmount([Incurred_Loss]), type nullable number),
+
+    AddKeys = Table.AddColumn(AddCleanLoss, "SchoolKey", each Text.Upper(Text.Trim([School_Site]))),
+    AddKeys2 = Table.AddColumn(AddKeys, "DeptKey", each Text.Upper(Text.Trim([Department]))),
+    AddKeys3 = Table.AddColumn(AddKeys2, "BodyPartKey", each Text.Upper(Text.Trim([Injury_Body_Part]))),
+    AddKeys4 = Table.AddColumn(AddKeys3, "CauseKey", each Text.Upper(Text.Trim([Injury_Cause]))),
+    AddKeys5 = Table.AddColumn(AddKeys4, "StatusKey", each Text.Upper(Text.Trim([Claim_Status]))),
+
+    MergeSchool = Table.NestedJoin(AddKeys5, {"SchoolKey"}, Excel.CurrentWorkbook(){[Name="Map_School"]}[Content], {"RawKey"}, "SchoolMatch", JoinKind.LeftOuter),
+    ExpandSchool = Table.ExpandTableColumn(MergeSchool, "SchoolMatch", {"CleanSchoolSite","SchoolLevel"}),
+
+    MergeDept = Table.NestedJoin(ExpandSchool, {"DeptKey"}, Excel.CurrentWorkbook(){[Name="Map_Department"]}[Content], {"RawKey"}, "DeptMatch", JoinKind.LeftOuter),
+    ExpandDept = Table.ExpandTableColumn(MergeDept, "DeptMatch", {"CleanDepartment"}),
+
+    MergeBodyPart = Table.NestedJoin(ExpandDept, {"BodyPartKey"}, Excel.CurrentWorkbook(){[Name="Map_BodyPart"]}[Content], {"RawKey"}, "BodyMatch", JoinKind.LeftOuter),
+    ExpandBodyPart = Table.ExpandTableColumn(MergeBodyPart, "BodyMatch", {"CleanBodyPart"}),
+
+    MergeCause = Table.NestedJoin(ExpandBodyPart, {"CauseKey"}, Excel.CurrentWorkbook(){[Name="Map_Cause"]}[Content], {"RawKey"}, "CauseMatch", JoinKind.LeftOuter),
+    ExpandCause = Table.ExpandTableColumn(MergeCause, "CauseMatch", {"CleanCause"}),
+
+    MergeStatus = Table.NestedJoin(ExpandCause, {"StatusKey"}, Excel.CurrentWorkbook(){[Name="Map_Status"]}[Content], {"RawKey"}, "StatusMatch", JoinKind.LeftOuter),
+    ExpandStatus = Table.ExpandTableColumn(MergeStatus, "StatusMatch", {"CleanStatus"}),
+
+    RemoveKeys = Table.RemoveColumns(ExpandStatus, {"SchoolKey","DeptKey","BodyPartKey","CauseKey","StatusKey","School_Site","Department","Injury_Body_Part","Injury_Cause","Claim_Status"}),
+
+    AddReportMonth = Table.AddColumn(RemoveKeys, "ReportMonth", each if [ParsedDate] <> null then Date.ToText([ParsedDate], "yyyy-MM") else null),
+    AddReportQuarter = Table.AddColumn(AddReportMonth, "ReportQuarter", each if [ParsedDate] <> null then "Q" & Text.From(Date.QuarterOfYear([ParsedDate])) & "-" & Text.From(Date.Year([ParsedDate])) else null),
+    AddLossPending = Table.AddColumn(AddReportQuarter, "LossIsEstimatePending", each [CleanedLoss] = null),
+
+    AddDateExceptionReason = Table.AddColumn(AddLossPending, "DateExceptionReason", each
+        if [ParsedDate] = null then "Report_Date could not be parsed"
+        else if Date.Year([ParsedDate]) <> 2024 and Date.Year([ParsedDate]) <> 2025 then
+            "Report_Date year (" & Text.From(Date.Year([ParsedDate])) & ") is outside expected reporting period (2024-2025)"
+        else null
+    ),
+    AddLossExceptionReason = Table.AddColumn(AddDateExceptionReason, "LossExceptionReason", each
+        if [CleanedLoss] <> null and [CleanedLoss] < 0 then
+            "Negative incurred loss - treated as a corrected credit entry, quarantined for adjuster confirmation"
+        else if [CleanedLoss] <> null and [CleanedLoss] > 100000 then
+            "Incurred loss exceeds $100,000 outlier threshold - quarantined for manual verification"
+        else null
+    ),
+    AddExceptionReason = Table.AddColumn(AddLossExceptionReason, "ExceptionReason", each
+        Text.Combine(List.RemoveNulls({[DateExceptionReason], [LossExceptionReason]}), "; ")
+    ),
+    AddIsException = Table.AddColumn(AddExceptionReason, "IsException", each
+        [DateExceptionReason] <> null or [LossExceptionReason] <> null
+    )
+in
+    AddIsException
+
+
+=========================================================
+QUERY 3: Claims_Clean   (Enable Load: ON -> New Worksheet "Claims_Clean")
+=========================================================
+let
+    Source = Claims_Prepared,
+    FilterOk = Table.SelectRows(Source, each [IsException] = false),
+    RemovedCols = Table.RemoveColumns(FilterOk, {"DateExceptionReason","LossExceptionReason","ExceptionReason","IsException","Report_Date","Incurred_Loss"}),
+    Reordered = Table.ReorderColumns(RemovedCols, {"Claim_ID","ParsedDate","CleanSchoolSite","SchoolLevel","CleanDepartment","CleanBodyPart","CleanCause","CleanStatus","CleanedLoss","LossIsEstimatePending","Employee_Type","ReportMonth","ReportQuarter"}),
+    Renamed = Table.RenameColumns(Reordered, {
+        {"Claim_ID", "ClaimId"},
+        {"ParsedDate", "ReportDate"},
+        {"CleanSchoolSite", "SchoolSite"},
+        {"CleanDepartment", "Department"},
+        {"CleanBodyPart", "InjuryBodyPart"},
+        {"CleanCause", "InjuryCause"},
+        {"CleanStatus", "ClaimStatus"},
+        {"CleanedLoss", "IncurredLoss"},
+        {"Employee_Type", "EmployeeType"}
+    })
+in
+    Renamed
+
+
+=========================================================
+QUERY 4: Exceptions   (Enable Load: ON -> New Worksheet "Exceptions")
+=========================================================
+let
+    Source = Claims_Prepared,
+    FilterExceptions = Table.SelectRows(Source, each [IsException] = true),
+    Reordered = Table.ReorderColumns(FilterExceptions, {"Claim_ID","Report_Date","ParsedDate","CleanSchoolSite","SchoolLevel","CleanDepartment","CleanBodyPart","CleanCause","CleanStatus","Incurred_Loss","CleanedLoss","Employee_Type","ExceptionReason"}),
+    RemovedHelperCols = Table.RemoveColumns(Reordered, {"DateExceptionReason","LossExceptionReason","IsException","LossIsEstimatePending","ReportMonth","ReportQuarter"}),
+    Renamed = Table.RenameColumns(RemovedHelperCols, {
+        {"Claim_ID", "ClaimId"},
+        {"Report_Date", "ReportDateRaw"},
+        {"ParsedDate", "ReportDateParsed"},
+        {"CleanSchoolSite", "SchoolSite"},
+        {"CleanDepartment", "Department"},
+        {"CleanBodyPart", "InjuryBodyPart"},
+        {"CleanCause", "InjuryCause"},
+        {"CleanStatus", "ClaimStatus"},
+        {"Incurred_Loss", "IncurredLossRaw"},
+        {"CleanedLoss", "IncurredLossParsed"},
+        {"Employee_Type", "EmployeeType"}
+    })
+in
+    Renamed
+
+
+=========================================================
+EXPECTED RESULTS (for you to sanity-check against, from a Python
+reference run of the same logic on this exact dataset)
+=========================================================
+Raw rows in RMIS_Export:              400
+Missing Claim_IDs assigned UNASSIGNED: 3
+Exact duplicate rows removed:          15
+Rows after dedup:                      385
+Date exceptions (bad/out-of-range):    2
+Loss exceptions (negative + outlier):  8  (5 negative, 3 outlier)
+Total rows sent to Exceptions sheet:   10
+Final rows in Claims_Clean:            375
+Blank Incurred_Loss retained in Clean
+  (LossIsEstimatePending = TRUE):      6
+
+If your numbers don't match exactly, check: did you build the queries in
+order (Claims_Raw -> Claims_Prepared -> Claims_Clean -> Exceptions), and are
+the 5 Map_* table names spelled exactly as in the workbook?

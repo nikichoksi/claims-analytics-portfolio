@@ -1,0 +1,87 @@
+DASHBOARD — ADDING LIVE PIVOTTABLES + SLICERS
+================================================
+claims_dashboard.xlsx already has 4 sheets built and populated from your
+real Claims_Clean data:
+
+  - Data            -> the full clean dataset as an Excel Table ("ClaimsData")
+  - Executive_KPIs  -> static KPI cards + 2 charts (total claims, open/closed/
+                        reopened, total & avg incurred loss, quarter-over-
+                        quarter comparison, status breakdown)
+  - Trends          -> line chart (claims by month), bar chart (top 10
+                        causes), bar chart (loss by body part), and a
+                        conditionally-formatted month x school-level heatmap
+  - Drilldown       -> a flat Site -> Department -> Cause table with total
+                        incurred loss, top-10% cells highlighted in red
+
+Everything above was generated from a script, which is why it's a static
+snapshot rather than slicer-driven. Interactive filtering (the slicers the
+project brief asks for) can only be built by Excel's own PivotTable engine,
+so that part you do live in the app — takes about 15 minutes. Steps below.
+
+
+STEP 1 — Build the "master" PivotTable
+----------------------------------------
+1. Go to the Data sheet, click any cell inside the ClaimsData table.
+2. Insert tab -> PivotTable -> New Worksheet. Name the new sheet "Pivot_Base".
+3. In the PivotTable Fields pane, build this layout:
+     Rows:    ClaimStatus
+     Columns: SchoolLevel
+     Values:  Count of ClaimId, Sum of IncurredLoss
+4. This one PivotTable is what your slicers will filter — everything else
+   (KPIs, charts) reads from it or from PivotTables connected to it.
+
+
+STEP 2 — Add slicers
+----------------------------------------
+1. With a cell inside the new PivotTable selected: Insert tab -> Slicer.
+2. Check the boxes for: SchoolLevel, Department, ClaimStatus.
+3. Three slicer boxes will appear. Cut (Cmd+X) each one and paste it onto
+   the Executive_KPIs sheet near the top, so they're visible alongside the
+   KPI cards. Resize/arrange them however looks clean.
+
+
+STEP 3 — Make the KPI numbers respond to the slicers
+----------------------------------------
+The KPI cards on Executive_KPIs right now are plain values, not formulas,
+so they won't move when you click a slicer. To make them live:
+1. On Pivot_Base (or a new small pivot placed directly on Executive_KPIs),
+   build a simple PivotTable with just:
+     Values: Count of ClaimId, Sum of IncurredLoss, Average of IncurredLoss
+   (no rows/columns needed — one summary block).
+2. Click into one of its value cells, then in the Executive_KPIs sheet type
+   "=" and click that pivot cell to insert a GETPIVOTDATA formula, e.g.:
+     =GETPIVOTDATA("ClaimId",Pivot_Base!$A$3)
+   Replace each static KPI card value with a formula like this pointing at
+   the relevant pivot cell.
+3. Right-click each slicer -> Report Connections -> check every PivotTable
+   you want it to filter (the master, and this new summary pivot). Now
+   clicking a slicer updates every connected pivot, and the GETPIVOTDATA
+   formulas update the KPI cards automatically.
+
+
+STEP 4 — (Optional) Turn Drilldown into a live PivotTable
+----------------------------------------
+The current Drilldown sheet is a flat, pre-aggregated table — it's
+accurate and already has the top-10%-loss conditional formatting applied,
+so it's usable as-is. If you'd rather have a real interactive PivotTable
+there too:
+1. Data sheet -> click inside ClaimsData -> Insert -> PivotTable -> place
+   it on a new sheet or below the existing Drilldown table.
+2. Rows: SchoolSite, then Department, then InjuryCause (drag all three into
+   Rows, in that order, for the nested drill-down).
+3. Values: Sum of IncurredLoss.
+4. Select the Values area -> Home -> Conditional Formatting -> Top/Bottom
+   Rules -> Top 10% -> pick a red fill, matching the existing sheet's style.
+5. Connect the same 3 slicers to this pivot via Report Connections if you
+   want it to filter along with the rest of the dashboard.
+
+
+STEP 5 — Sanity check
+----------------------------------------
+Click through each slicer value once and confirm:
+  - The KPI cards you converted to GETPIVOTDATA change.
+  - Any PivotTables/PivotCharts you connected via Report Connections change.
+  - The 4 original static charts (month trend, top causes, loss by body
+    part, quarter comparison, status breakdown) will NOT move — those are
+    fixed snapshots of the full dataset, which is fine for an "executive
+    summary" view; the slicers are for the interactive drill-down layer.
