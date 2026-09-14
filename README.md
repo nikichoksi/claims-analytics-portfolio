@@ -1,4 +1,4 @@
-# Claims Analytics Portfolio — Niki Choksi
+# Claims Analytics Portfolio - Niki Choksi
 
 A synthetic school-district workers' compensation claims analysis, built end-to-end:
 messy raw data → a documented Power Query cleaning pipeline → an Excel BI dashboard →
@@ -8,7 +8,7 @@ construct); no real students, employees, or incidents are represented.
 ## How to review (open in this order)
 
 1. **raw_claims_extract.xlsx**
-   The "before" — a 400-row, intentionally messy RMIS-style export (`RMIS_Export`
+   The "before" - a 400-row, intentionally messy RMIS-style export (`RMIS_Export`
    sheet): duplicate claim IDs, missing IDs, three different date formats,
    uncontrolled vocabulary (school names, departments, injury body parts/causes,
    claim status), and dirty incurred-loss values (currency text, negatives, blanks,
@@ -22,13 +22,13 @@ construct); no real students, employees, or incidents are represented.
    the pipeline's actual output.
 
 2. **claims_cleaning_log.xlsx**
-   The audit trail — a 13-step cleaning log (Action / Method / Rows Affected / Rule
+   The audit trail - a 13-step cleaning log (Action / Method / Rows Affected / Rule
    Applied / Rationale) documenting every transformation and *why* it was made, plus
    a data dictionary for the final `Claims_Clean` schema and a naming-convention note
    (PascalCase).
 
 3. **claims_dashboard.xlsx**
-   The "after" — built from the real `Claims_Clean` output: Executive KPIs (total
+   The "after" - built from the real `Claims_Clean` output: Executive KPIs (total
    claims, open/closed/re-opened, total & average incurred loss, quarter-over-quarter
    comparison), Trends (monthly claim volume, top injury causes, loss by body part, a
    month × school-level heatmap), and a Drilldown (Site → Department → Cause with
@@ -42,10 +42,10 @@ construct); no real students, employees, or incidents are represented.
 
 ## Supplementary reference (optional, for a technical reviewer)
 
-- **power_query_M_code.txt** — the complete M code for the 4-query pipeline, with
+- **power_query_M_code.txt** - the complete M code for the 4-query pipeline, with
   setup instructions, for anyone who wants to inspect the transformation logic
   directly without opening Excel.
-- **dashboard_pivot_slicer_guide.txt** — steps for adding live, slicer-driven
+- **dashboard_pivot_slicer_guide.txt** - steps for adding live, slicer-driven
   PivotTables on top of the dashboard's `Data` sheet.
 
 ## Notes
