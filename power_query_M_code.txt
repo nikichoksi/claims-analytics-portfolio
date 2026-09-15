@@ -27,11 +27,19 @@ HOW TO USE THIS FILE
 4. Build them IN THIS ORDER, because each one references the previous:
      Claims_Raw -> Claims_Prepared -> Claims_Clean -> Exceptions
 
-5. For Claims_Raw and Claims_Prepared: right-click -> "Enable Load" should be
-   turned OFF (they're staging queries, not meant to land on a sheet).
-   For Claims_Clean and Exceptions: leave "Enable Load" ON. When you click
-   Close & Load, choose "Load To... -> New Worksheet" and load them onto sheets
-   named exactly "Claims_Clean" and "Exceptions".
+5. Claims_Raw and Claims_Prepared are staging queries and ideally shouldn't
+   land on a sheet at all. In Excel for Mac's Power Query Editor, that
+   "Enable Load" toggle isn't exposed in the query's right-click menu or its
+   Properties dialog (only Name/Description show up there) - so on that
+   build, don't fight it: let all 4 queries load normally, then in Excel
+   itself right-click the "Claims_Raw" and "Claims_Prepared" sheet tabs and
+   choose Hide. (On Windows Excel, or if your Mac build does expose it via
+   Data -> Queries & Connections -> right-click the query, you can disable
+   Enable Load directly instead - functionally identical, either way nothing
+   about Claims_Clean or Exceptions changes, since a query's own load
+   setting has no effect on other queries that reference it.)
+   For Claims_Clean and Exceptions: leave "Enable Load" ON so they land on
+   sheets named exactly "Claims_Clean" and "Exceptions".
 
 Naming convention used in Claims_Clean: PascalCase for every column
 (ClaimId, ReportDate, SchoolSite, ...). Documented in claims_cleaning_log.xlsx.
