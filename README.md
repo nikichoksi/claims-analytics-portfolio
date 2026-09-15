@@ -1,4 +1,4 @@
-# Claims Analytics Portfolio
+# Claims Analytics
 
 A synthetic school-district workers' compensation claims analysis, built end-to-end:
 messy raw data → a documented Power Query cleaning pipeline → an Excel BI dashboard →
