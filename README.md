@@ -28,16 +28,29 @@ construct); no real students, employees, or incidents are represented.
    (PascalCase).
 
 3. **claims_dashboard.xlsx**
-   The "after" - built from the real `Claims_Clean` output: Executive KPIs (total
-   claims, open/closed/re-opened, total & average incurred loss, quarter-over-quarter
-   comparison), Trends (monthly claim volume, top injury causes, loss by body part, a
-   month × school-level heatmap), and a Drilldown (Site → Department → Cause with
-   incurred loss, top-10%-loss cells highlighted).
+   The "after" - built from the real `Claims_Clean` output, 4 sheets:
+   - *Executive_KPIs*: total claims, open/closed/re-opened, total & average incurred
+     loss, a pending-loss-estimate count, quarter-over-quarter comparison, a
+     data-quality reconciliation strip (400 raw → 375 clean, with every step's
+     count), and a real **PivotTable + 3 connected slicers** (School Level,
+     Department, Claim Status) on the `Pivot_Base` sheet - the KPI cards themselves
+     are a full-district snapshot; the slicers filter the interactive drill-down
+     view, not the cards.
+   - *Trends*: monthly claim volume, top injury causes, loss by body part, a month ×
+     school-level heatmap, and a Pareto chart showing which sites concentrate the
+     most incurred loss. Chart titles state findings directly (e.g., "Slip/Fall Is
+     the #1 Injury Cause"), and every chart carries data labels.
+   - *Drilldown*: Site → Department → Cause with incurred loss, top-10%-loss cells
+     highlighted; claims with no loss estimate yet show "Pending" (with a count),
+     not a misleading $0.
+   - *Data*: the full clean dataset as an Excel Table, the source for the PivotTable
+     and any further analysis.
 
 4. **findings_memo.pdf**
    A one-page memo addressed to a Director of Risk Management: summary, key findings
    (e.g., slip/fall claims are 31% of volume but 42% of incurred loss, concentrated in
-   winter at elementary sites), recommended actions, data-quality notes, and a
+   winter at elementary sites), an exhibit chart of claims by month with winter
+   months highlighted, recommended actions, data-quality notes, and a
    methodology/privacy footer referencing CORA.
 
 ## Supplementary reference (optional, for a technical reviewer)
@@ -45,8 +58,14 @@ construct); no real students, employees, or incidents are represented.
 - **power_query_M_code.txt** - the complete M code for the 4-query pipeline, with
   setup instructions, for anyone who wants to inspect the transformation logic
   directly without opening Excel.
-- **dashboard_pivot_slicer_guide.txt** - steps for adding live, slicer-driven
-  PivotTables on top of the dashboard's `Data` sheet.
+- **dashboard_pivot_slicer_guide.txt** - the manual, click-by-click steps for adding
+  a live, slicer-driven PivotTable on top of the dashboard's `Data` sheet.
+- **build_live_dashboard.bas** - the VBA macro actually used to build the PivotTable
+  and slicers already in `claims_dashboard.xlsx` (Excel's own PivotTable/Slicer
+  objects can't be created by any file-writing library, so this was the automated
+  path instead of the fully manual one above). To rebuild it from scratch: open
+  `claims_dashboard.xlsx` in Excel, Tools → Macro → Visual Basic Editor (Option+F11),
+  Insert → Module, paste this file's contents, then F5 to run `BuildLiveDashboard`.
 
 ## Notes
 
